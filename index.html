@@ -324,6 +324,12 @@ mark{background:rgba(232,168,56,.35);color:var(--ink);padding:0 2px;border-radiu
 .theme-btn.active{background:var(--accent);color:var(--btn-ink);border-color:var(--accent);font-weight:600}
 .theme-btn .ticon{font-size:14px;line-height:1}
 
+/* ===== 多设备同步条 ===== */
+.sync-bar{display:flex;align-items:center;justify-content:center;gap:10px;margin:2px 0 10px;font-size:12px;color:var(--muted)}
+.sync-badge{font-size:12px;color:var(--muted)}
+.btn-mini{padding:5px 14px;font-size:12px;border-radius:16px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent}
+.btn-mini:active{transform:scale(.97)}
+
 /* ===== 桌面端适配 ===== */
 @media(min-width:768px){
   .page{max-width:960px;padding:20px 20px 30px}
@@ -562,12 +568,207 @@ function loadData(key, original){
 
 // 基础数据初始化在 initApp() 中同步执行（首屏立即可用）；远程自动更新由 fetchRemoteData() 后台触发。
 
-function saveAddedSongs(){ try{ localStorage.setItem(KEYS.added, JSON.stringify(addedSongs)); }catch(e){ toast('保存失败'); } }
+/* ===== 多设备同步层（GitHub 后端 + 客户端 AES-GCM 加密） =====
+ * 后端：私有仓库 qiu299/playlist-sync，每用户一个加密 JSON 文件 users/{user}.json
+ * 隐私：密码本地派生密钥，数据 AES-GCM 加密后上传，仓库内为密文，他人无法解密
+ * 令牌：下方 TOKEN 部署前替换为只限该仓库的 fine-grained PAT（暴露在网页中是已知权衡，
+ *       仅能读写该仓库，且数据已加密，他人即使拿到令牌也读不到内容）
+ * 同步范围：今日歌单(saved)/添加歌曲(added)/最近点歌(fanRecent)/主题(theme)
+ */
+var SYNC = (function(){
+  var OWNER='qiu299', REPO='playlist-sync', TOKEN='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';
+  var API='https://api.github.com';
+  var PK=[KEYS.saved, KEYS.added, KEYS.fanRecent, KEYS.theme];
+  var _user=null, _pass=null, _sha=null, _status='off', _timer=null, _busy=false;
+
+  function devKey(){
+    var k=localStorage.getItem('sgl_devkey');
+    if(!k){ k=''; for(var i=0;i<32;i++) k+=Math.floor(Math.random()*16).toString(16); localStorage.setItem('sgl_devkey',k); }
+    return k;
+  }
+  function b64u(buf){ return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); }
+  function ub64(s){ return new Uint8Array(atob(s.replace(/\s/g,'')).split('').map(function(c){return c.charCodeAt(0);})); }
+  function s2b(str){ return new TextEncoder().encode(str); }
+  function b2s(buf){ return new TextDecoder().decode(buf); }
+  function keyFrom(pass, salt){
+    return crypto.subtle.importKey('raw', s2b(pass), 'PBKDF2', false, ['deriveKey']).then(function(b){
+      return crypto.subtle.deriveKey({name:'PBKDF2', salt:salt, iterations:100000, hash:'SHA-256'}, b, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+    });
+  }
+  function sEnc(obj, pass){
+    var salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12));
+    return keyFrom(pass, salt).then(function(k){ return crypto.subtle.encrypt({name:'AES-GCM', iv:iv}, k, s2b(JSON.stringify(obj))).then(function(ct){ return {s:b64u(salt), i:b64u(iv), c:b64u(ct)}; }); });
+  }
+  function sDec(blob, pass){
+    return keyFrom(pass, ub64(blob.s)).then(function(k){ return crypto.subtle.decrypt({name:'AES-GCM', iv:ub64(blob.i)}, k, ub64(blob.c)).then(function(pt){ return JSON.parse(b2s(pt)); }); });
+  }
+  function path(u){ return '/repos/'+OWNER+'/'+REPO+'/contents/users/'+encodeURIComponent(u)+'.json'; }
+  function ghHeaders(){ return {'Authorization':'Bearer '+TOKEN, 'Accept':'application/vnd.github+json', 'Content-Type':'application/json'}; }
+  function ghGet(u){ return fetch(API+path(u), {headers:ghHeaders()}).then(function(r){ if(r.status===404) return null; if(!r.ok) throw new Error('GET '+r.status); return r.json(); }); }
+  function ghPut(u, content, sha, msg){ var b={message:msg, content:content}; if(sha) b.sha=sha; return fetch(API+path(u), {method:'PUT', headers:ghHeaders(), body:JSON.stringify(b)}).then(function(r){ if(!r.ok) throw new Error('PUT '+r.status); return r.json(); }); }
+
+  function collect(){
+    var o={}; PK.forEach(function(k){ var v=localStorage.getItem(k); try{ o[k]=JSON.parse(v); }catch(e){ o[k]=v; } }); return o;
+  }
+  function merge(local, remote){
+    var out={}; PK.forEach(function(k){
+      var l=local[k], r=remote?remote[k]:undefined;
+      if(Array.isArray(l)||Array.isArray(r)){
+        var a=Array.isArray(l)?l:[], b=Array.isArray(r)?r:[], seen={}, arr=[];
+        a.concat(b).forEach(function(x){ var j=JSON.stringify(x); if(!seen[j]){ seen[j]=1; arr.push(x); } });
+        out[k]=arr;
+      } else { out[k]=(l!==undefined && l!==null)?l:r; }
+    }); return out;
+  }
+  function reconcileAdded(){
+    var names={}; ALL_SONGS.songs.forEach(function(s){ names[s.name]=1; });
+    addedSongs.forEach(function(s){ if(!names[s.name]){ ALL_SONGS.songs.push(s); names[s.name]=1; } });
+  }
+  function writeBack(o){
+    if(!o) return;
+    PK.forEach(function(k){ if(o[k]!==undefined){ try{ localStorage.setItem(k, typeof o[k]==='string'?o[k]:JSON.stringify(o[k])); }catch(e){} } });
+    try{ addedSongs=JSON.parse(localStorage.getItem(KEYS.added)||'[]'); reconcileAdded(); }catch(e){}
+    try{ fanRecent=JSON.parse(localStorage.getItem(KEYS.fanRecent)||'[]'); }catch(e){}
+    try{ var t=localStorage.getItem(KEYS.theme); if(t) setTheme(t); }catch(e){}
+    if(currentView==='daily'){ try{ renderSavedDaily(); }catch(e){} }
+    updateBadge();
+  }
+  function updateBadge(){
+    var el=document.getElementById('syncBadge'); if(!el) return;
+    var m={off:['⚪','未登录'], syncing:['🟡','同步中…'], ok:['🟢','已同步'], error:['🔴','同步失败']}[_status]||['⚪','未登录'];
+    el.textContent=m[0]+' '+m[1];
+  }
+  function setStatus(s){ _status=s; updateBadge(); }
+
+  function pushBody(merged){
+    return sEnc(merged, _pass).then(function(blob){
+      var payload=b64u(s2b(JSON.stringify(blob)));
+      return ghPut(_user, payload, _sha, 'sync '+_user).then(function(r){ if(r&&r.content) _sha=r.content.sha; });
+    });
+  }
+  function push(){
+    if(!_user||_busy) return; _busy=true; setStatus('syncing');
+    ghGet(_user).then(function(f){
+      _sha = f? f.sha : null;
+      if(!f){ var m0=collect(); return pushBody(m0).then(function(){ writeBack(m0); _busy=false; setStatus('ok'); }); }
+      return sDec(JSON.parse(b2s(ub64(f.content))), _pass).then(function(remote){
+        var m1=merge(collect(), remote); return pushBody(m1).then(function(){ writeBack(m1); _busy=false; setStatus('ok'); });
+      }).catch(function(){ var m2=collect(); return pushBody(m2).then(function(){ writeBack(m2); _busy=false; setStatus('ok'); }); });
+    }).catch(function(e){ _busy=false; setStatus('error'); console.warn('[sync] push 失败', e); });
+  }
+  function pull(){
+    if(!_user||_busy) return Promise.resolve();
+    _busy=true; setStatus('syncing');
+    return ghGet(_user).then(function(f){
+      if(!f){ _busy=false; setStatus(_user?'ok':'off'); return; }
+      _sha=f.sha;
+      return sDec(JSON.parse(b2s(ub64(f.content))), _pass).then(function(remote){
+        var merged=merge(collect(), remote); writeBack(merged); return pushBody(merged);
+      }).then(function(){ _busy=false; setStatus('ok'); })
+        .catch(function(e){ _busy=false; setStatus('error'); console.warn('[sync] pull 解密失败', e); });
+    }).catch(function(e){
+      _busy=false;
+      if(e && e.message && e.message.indexOf('401')>=0){ logout(true); }
+      else setStatus('error');
+      console.warn('[sync] pull 失败', e);
+    });
+  }
+  function scheduleSave(){ if(!_user) return; clearTimeout(_timer); _timer=setTimeout(push, 800); }
+
+  function setSession(u, p){
+    _user=u; _pass=p;
+    sEnc(p, devKey()).then(function(blob){ try{ localStorage.setItem('sgl_sync_sess', JSON.stringify({user:u, blob:blob})); }catch(e){} });
+  }
+  function logout(silent){
+    _user=null; _pass=null; _sha=null; try{ localStorage.removeItem('sgl_sync_sess'); }catch(e){} setStatus('off'); updateBadge();
+    if(!silent) toast('已退出登录');
+  }
+  function sanitize(u){ return (u||'').toLowerCase().replace(/[^a-z0-9_]/g,'').slice(0,32); }
+
+  function doLogin(u, p, isReg){
+    if(!window.crypto || !crypto.subtle){ toast('同步需在 https 或 localhost 下使用'); return; }
+    u=sanitize(u);
+    if(!u){ toast('用户名只能是字母/数字/下划线'); return; }
+    if(!p || p.length<4){ toast('密码至少 4 位'); return; }
+    ghGet(u).then(function(f){
+      if(isReg){
+        if(f){ toast('该用户名已被注册，请直接登录'); return; }
+        setSession(u,p); push().then(function(){ toast('注册成功，已开始同步'); afterAuth(); });
+      } else {
+        if(!f){ toast('用户不存在，请先注册'); return; }
+        sDec(JSON.parse(b2s(ub64(f.content))), p).then(function(remote){
+          _sha=f.sha; setSession(u,p);
+          var merged=merge(collect(), remote); writeBack(merged);
+          pushBody(merged).then(function(){ toast('登录成功，已同步'); afterAuth(); });
+        }).catch(function(){ toast('密码错误'); });
+      }
+    }).catch(function(e){ toast('网络错误，稍后重试'); console.warn('[sync]', e); });
+  }
+  function afterAuth(){
+    closeModal();
+    if(currentView==='nav'){ try{ renderNav(document.getElementById('view')); }catch(e){} }
+    else updateBadge();
+  }
+
+  /* ---- 登录模态 UI ---- */
+  function openModal(){
+    var box=document.getElementById('syncModal'); if(!box){ buildModal(); box=document.getElementById('syncModal'); }
+    renderModal(); box.classList.add('show');
+    setTimeout(function(){ var i=document.getElementById('syncUser'); if(i) i.focus(); }, 50);
+  }
+  function closeModal(){ var b=document.getElementById('syncModal'); if(b) b.classList.remove('show'); }
+  function buildModal(){
+    var css='<style>.sync-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:9999}.sync-ov.show{display:flex}.sync-box{background:var(--card,#222);color:var(--fg,#fff);width:88%;max-width:360px;border-radius:14px;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.4)}.sync-box h3{margin:0 0 4px}.sync-box .sub{color:var(--muted,#aaa);font-size:12px;margin-bottom:12px}.sync-box input{width:100%;box-sizing:border-box;padding:10px;margin:6px 0;border-radius:8px;border:1px solid var(--border,#444);background:var(--bg,#111);color:var(--fg,#fff);font-size:15px}.sync-box .row{display:flex;gap:8px;margin-top:10px}.sync-box button{flex:1;padding:10px;border-radius:8px;border:none;font-size:14px;cursor:pointer;color:#fff}.sync-box .tabs{display:flex;gap:8px;margin-bottom:8px}.sync-box .tab{flex:1;text-align:center;padding:8px;border-radius:8px;background:var(--bg,#111);color:var(--fg,#fff);cursor:pointer}.sync-box .tab.active{background:var(--accent,#4f7cff)}.sync-info{font-size:12px;color:var(--muted,#aaa);margin-top:10px;line-height:1.5}</style>';
+    var html=css+'<div class="sync-ov" id="syncModal"><div class="sync-box"><div id="syncModalBody"></div></div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+    document.getElementById('syncModal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
+  }
+  function renderModal(){
+    var body=document.getElementById('syncModalBody'); if(!body) return;
+    if(_user){
+      body.innerHTML='<h3>已登录</h3><div class="sub">账号：'+esc(_user)+'</div>'
+        +'<div class="row"><button id="syncPull" style="background:var(--accent,#4f7cff)">立即同步</button>'
+        +'<button id="syncLogout" style="background:#c0392b">退出登录</button></div>'
+        +'<div class="sync-info">数据已加密保存在 GitHub，手机/iPad/电脑登录同一账号即可同步今日歌单等个人数据。</div>';
+      document.getElementById('syncPull').onclick=function(){ closeModal(); pull(); };
+      document.getElementById('syncLogout').onclick=function(){ logout(); renderModal(); };
+    } else {
+      body.innerHTML='<div class="tabs"><div class="tab active" id="tabLogin">登录</div><div class="tab" id="tabReg">注册</div></div>'
+        +'<input id="syncUser" placeholder="用户名（字母/数字）" autocapitalize="off" autocomplete="off" spellcheck="false">'
+        +'<input id="syncPass" type="password" placeholder="密码（至少4位）" autocomplete="off">'
+        +'<div class="row"><button id="syncGo" style="background:var(--accent,#4f7cff)">登录</button></div>'
+        +'<div class="sync-info">登录后今日歌单/添加歌曲/最近点歌/主题会在多设备间自动同步。数据本地加密上传，他人无法读取。</div>';
+      var reg=false;
+      document.getElementById('tabLogin').onclick=function(){ reg=false; this.classList.add('active'); document.getElementById('tabReg').classList.remove('active'); document.getElementById('syncGo').textContent='登录'; };
+      document.getElementById('tabReg').onclick=function(){ reg=true; this.classList.add('active'); document.getElementById('tabLogin').classList.remove('active'); document.getElementById('syncGo').textContent='注册'; };
+      document.getElementById('syncGo').onclick=function(){
+        var u=document.getElementById('syncUser').value.trim(), p=document.getElementById('syncPass').value;
+        doLogin(u,p,reg);
+      };
+      document.getElementById('syncPass').addEventListener('keydown', function(e){ if(e.key==='Enter') document.getElementById('syncGo').click(); });
+    }
+  }
+
+  function boot(){
+    if(!window.crypto || !crypto.subtle){ setStatus('off'); return; }
+    var s; try{ s=JSON.parse(localStorage.getItem('sgl_sync_sess')||'null'); }catch(e){}
+    window.addEventListener('online', function(){ if(_user) pull(); });
+    window.addEventListener('offline', function(){ setStatus('off'); });
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden && _user) pull(); });
+    if(s&&s.user&&s.blob){
+      sDec(s.blob, devKey()).then(function(p){ _pass=p; _user=s.user; pull(); }).catch(function(){ try{ localStorage.removeItem('sgl_sync_sess'); }catch(e){} setStatus('off'); });
+    } else { setStatus('off'); }
+  }
+
+  return { boot:boot, openModal:openModal, closeModal:closeModal, scheduleSave:scheduleSave, pull:pull, logout:logout, isOn:function(){ return !!_user; } };
+})();
+
+function saveAddedSongs(){ try{ localStorage.setItem(KEYS.added, JSON.stringify(addedSongs)); }catch(e){ toast('保存失败'); } SYNC.scheduleSave(); }
 
 // 最近添加的粉丝歌单记录（song|fan 格式）
 var fanRecent = [];
 try{ fanRecent = JSON.parse(localStorage.getItem(KEYS.fanRecent) || '[]'); }catch(e){}
-function saveFanRecent(){ try{ localStorage.setItem(KEYS.fanRecent, JSON.stringify(fanRecent)); }catch(e){} }
+function saveFanRecent(){ try{ localStorage.setItem(KEYS.fanRecent, JSON.stringify(fanRecent)); }catch(e){} SYNC.scheduleSave(); }
 function addFanRecent(song, fan){
   var key = song + '|' + fan;
   if(fanRecent.indexOf(key) < 0){ fanRecent.unshift(key); if(fanRecent.length > 200) fanRecent = fanRecent.slice(0, 200); saveFanRecent(); }
@@ -599,6 +800,7 @@ function getCurrentTheme(){
 }
 function setTheme(theme){
   try{ localStorage.setItem(KEYS.theme, theme); }catch(e){}
+  SYNC.scheduleSave();
   document.documentElement.setAttribute('data-theme', theme);
   // 更新状态栏样式
   var meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
@@ -805,6 +1007,7 @@ function renderNav(c){
     + '<span class="theme-btn'+(currentTheme==='dark'?' active':'')+'" data-theme="dark"><span class="ticon">🌙</span>暗色</span>'
     + '<span class="theme-btn'+(currentTheme==='light'?' active':'')+'" data-theme="light"><span class="ticon">☀️</span>亮色</span>'
     + '</div>'
+    + '<div class="sync-bar"><span id="syncBadge" class="sync-badge">⚪ 未登录</span> <button class="btn btn-mini" id="syncBtn">登录/同步</button></div>'
     + '<div class="nav-grid">'
     + navCard('daily','🎵','每日歌单','随机生成 · 锁定 · 保存今日歌单','c2')
     + navCard('fan','👥','粉丝歌单','点歌记录 · 搜索 · 分组浏览','c1')
@@ -828,6 +1031,8 @@ function renderNav(c){
       setTimeout(function(){ location.reload(); }, 800);
     });
   });
+  var sb = document.getElementById('syncBtn');
+  if(sb) sb.addEventListener('click', function(){ SYNC.openModal(); });
   viewRendered.nav = true;
 }
 function navCard(view, icon, title, desc, cls){
@@ -1011,13 +1216,13 @@ function saveDaily(){
     confirmDialog(ds+' 已有保存，是否覆盖？', function(){
       lists[ei]={date:ds,time:ts,phases:phases,total:total};
       if(lists.length>30) lists=lists.slice(0,30);
-      try{ localStorage.setItem(KEYS.saved,JSON.stringify(lists)); renderSavedDaily(); toast('已保存'); }catch(e){ toast('保存失败'); }
+      try{ localStorage.setItem(KEYS.saved,JSON.stringify(lists)); renderSavedDaily(); toast('已保存'); SYNC.scheduleSave(); }catch(e){ toast('保存失败'); }
     });
     return;
   }
   lists.unshift({date:ds,time:ts,phases:phases,total:total});
   if(lists.length>30) lists=lists.slice(0,30);
-  try{ localStorage.setItem(KEYS.saved,JSON.stringify(lists)); renderSavedDaily(); toast('已保存'); }catch(e){ toast('保存失败'); }
+  try{ localStorage.setItem(KEYS.saved,JSON.stringify(lists)); renderSavedDaily(); toast('已保存'); SYNC.scheduleSave(); }catch(e){ toast('保存失败'); }
 }
 
 function renderSavedDaily(){
@@ -1049,7 +1254,7 @@ function renderSavedDaily(){
       var idx=parseInt(this.getAttribute('data-del'));
       var lists=[]; try{ lists=JSON.parse(localStorage.getItem(KEYS.saved)||'[]'); }catch(e){}
       confirmDialog('删除 '+lists[idx].date+' 的歌单？', function(){
-        lists.splice(idx,1); localStorage.setItem(KEYS.saved,JSON.stringify(lists)); renderSavedDaily(); toast('已删除');
+        lists.splice(idx,1); localStorage.setItem(KEYS.saved,JSON.stringify(lists)); renderSavedDaily(); toast('已删除'); SYNC.scheduleSave();
       });
     });
   });
@@ -1852,6 +2057,7 @@ function saveBatchSongs(){
 /* ===== 初始化 ===== */
 // 应用启动：顶部同步调用 initApp() 渲染首屏（按钮立即可点），
 // 随后 fetchRemoteData() 后台拉取最新数据并静默刷新，绝不阻塞首屏。
+SYNC.boot();
 
 })();
 
