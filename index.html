@@ -496,7 +496,7 @@ var KEYS = {
 // 数据版本戳：每次发布新基础数据就 bump 此版本号（必须与 data.json 中的 data_version 一致）。
 // 版本变化时自动丢弃旧的本地基础库(lib/daily/stats)，加载新基础数据；
 // 个人数据(粉丝歌单 sgl_fan、添加歌曲 sgl_added、最近添加 sgl_fan_recent、保存歌单 sgl_saved)不受影响。
-var DATA_VERSION = '2026-07-29-v9';
+var DATA_VERSION = '2026-07-30-v10';
 
 // 远程数据地址（与页面同目录的 data.json）。部署后手机每次打开都会拉取最新数据，
 // 因此 URL 固定、无需重装；内嵌的 __FAN_DATA__ 等仅作为离线/首屏兜底。
@@ -615,7 +615,9 @@ var SYNC = (function(){
   var TOKEN=_t.join('');
   var API='https://api.github.com';
   var PK=[KEYS.saved, KEYS.added, KEYS.fanRecent, KEYS.theme, KEYS.memo];
-  var _user=null, _pass=null, _sha=null, _status='off', _timer=null, _busy=false;
+  var _user=null, _pass=null, _sha=null, _status='off', _timer=null, _busy=false, _lastPull=0;
+  // 冷却期：自动触发的 pull 间隔不少于 30 秒（防止手机频繁 visibilitychange 导致闪烁）
+  var PULL_COOLDOWN = 30000;
 
   function devKey(){
     var k=localStorage.getItem('sgl_devkey');
@@ -666,11 +668,11 @@ var SYNC = (function(){
     try{ addedSongs=JSON.parse(localStorage.getItem(KEYS.added)||'[]'); reconcileAdded(); }catch(e){}
     try{ fanRecent=JSON.parse(localStorage.getItem(KEYS.fanRecent)||'[]'); }catch(e){}
     try{ var t=localStorage.getItem(KEYS.theme); if(t) setTheme(t); }catch(e){}
-    if(currentView==='daily'){ try{ renderSavedDaily(); }catch(e){} }
+    // 注意：不再主动 renderMemo / renderSavedDaily，避免同步过程中清空用户正在输入的内容
+    // 视图更新延迟到用户下次切回该视图时自然触发
     try{ memoList=JSON.parse(localStorage.getItem(KEYS.memo)||'[]'); }catch(e){}
     if(!Array.isArray(memoList)) memoList=[];
     memoList=memoList.map(normalizeMemo);
-    if(currentView==='memo'){ try{ renderMemo(document.getElementById('view')); }catch(e){} }
     updateBadge();
   }
   function updateBadge(){
@@ -690,15 +692,17 @@ var SYNC = (function(){
     if(!_user||_busy) return; _busy=true; setStatus('syncing');
     ghGet(_user).then(function(f){
       _sha = f? f.sha : null;
-      if(!f){ var m0=collect(); return pushBody(m0).then(function(){ writeBack(m0); _busy=false; setStatus('ok'); }); }
+      // 合并前重新采集一次 localStorage，确保网络请求期间用户新增的数据不丢失
+      var latest = collect();
+      if(!f){ return pushBody(latest).then(function(){ writeBack(latest); _busy=false; setStatus('ok'); }); }
       return sDec(JSON.parse(b2s(ub64(f.content))), _pass).then(function(remote){
-        var m1=merge(collect(), remote); return pushBody(m1).then(function(){ writeBack(m1); _busy=false; setStatus('ok'); });
-      }).catch(function(){ var m2=collect(); return pushBody(m2).then(function(){ writeBack(m2); _busy=false; setStatus('ok'); }); });
+        var m1=merge(latest, remote); return pushBody(m1).then(function(){ writeBack(m1); _busy=false; setStatus('ok'); });
+      }).catch(function(){ var m2=latest; return pushBody(m2).then(function(){ writeBack(m2); _busy=false; setStatus('ok'); }); });
     }).catch(function(e){ _busy=false; setStatus('error'); console.warn('[sync] push 失败', e); });
   }
   function pull(){
     if(!_user||_busy) return Promise.resolve();
-    _busy=true; setStatus('syncing');
+    _busy=true; _lastPull=Date.now(); setStatus('syncing');
     return ghGet(_user).then(function(f){
       if(!f){ _busy=false; setStatus(_user?'ok':'off'); return; }
       _sha=f.sha;
@@ -713,7 +717,7 @@ var SYNC = (function(){
       console.warn('[sync] pull 失败', e);
     });
   }
-  function scheduleSave(){ if(!_user) return; clearTimeout(_timer); _timer=setTimeout(push, 800); }
+  function scheduleSave(){ if(!_user) return; clearTimeout(_timer); _timer=setTimeout(push, 2000); }
 
   function setSession(u, p){
     _user=u; _pass=p;
@@ -792,9 +796,9 @@ var SYNC = (function(){
   function boot(){
     if(!window.crypto || !crypto.subtle){ setStatus('off'); return; }
     var s; try{ s=JSON.parse(localStorage.getItem('sgl_sync_sess')||'null'); }catch(e){}
-    window.addEventListener('online', function(){ if(_user) pull(); });
+    window.addEventListener('online', function(){ if(_user && Date.now()-_lastPull>PULL_COOLDOWN) pull(); });
     window.addEventListener('offline', function(){ setStatus('off'); });
-    document.addEventListener('visibilitychange', function(){ if(!document.hidden && _user) pull(); });
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden && _user && Date.now()-_lastPull>PULL_COOLDOWN) pull(); });
     if(s&&s.user&&s.blob){
       sDec(s.blob, devKey()).then(function(p){ _pass=p; _user=s.user; pull(); }).catch(function(){ try{ localStorage.removeItem('sgl_sync_sess'); }catch(e){} setStatus('off'); });
     } else { setStatus('off'); }
