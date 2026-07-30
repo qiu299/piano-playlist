@@ -503,7 +503,7 @@ var KEYS = {
 // 数据版本戳：每次发布新基础数据就 bump 此版本号（必须与 data.json 中的 data_version 一致）。
 // 版本变化时自动丢弃旧的本地基础库(lib/daily/stats)，加载新基础数据；
 // 个人数据(粉丝歌单 sgl_fan、添加歌曲 sgl_added、最近添加 sgl_fan_recent、保存歌单 sgl_saved)不受影响。
-var DATA_VERSION = '2026-07-31-v15';
+var DATA_VERSION = '2026-07-31-v16';
 var BUILD_VERSION = DATA_VERSION; // 内嵌不可变版本，用于检测网页代码是否过期（DATA_VERSION 可能被远程覆盖，故用此常量）
 
 // 远程数据地址（与页面同目录的 data.json）。部署后手机每次打开都会拉取最新数据，
