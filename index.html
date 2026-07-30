@@ -1191,8 +1191,10 @@ function normalizeMemo(m){
     m.tags = (m.cat && m.cat!=='其他') ? [m.cat] : ['待办'];
   }
   if(typeof m.done!=='boolean') m.done=false;
+  if(typeof m.pinned!=='boolean') m.pinned=false;
   if(!m.id) m.id=uid();
   if(!m.ts) m.ts=Date.now();
+  if(typeof m.pos!=='number') m.pos=Date.now();
   return m;
 }
 function relTime(ts){
@@ -1216,7 +1218,8 @@ function saveSyncDel(){ try{ localStorage.setItem(KEYS.syncDel, JSON.stringify({
 function addMemo(text, tags){
   text=(text||'').trim(); if(!text) return false;
   if(!Array.isArray(tags) || !tags.length) tags=['待办'];
-  memoList.unshift({id:uid(), text:text, tags:tags.slice(), done:false, ts:Date.now()});
+  var now=Date.now();
+  memoList.unshift({id:uid(), text:text, tags:tags.slice(), done:false, pinned:false, ts:now, pos:now});
   saveMemo(); renderMemoList(); return true;
 }
 function toggleMemo(id){ var m=memoList.find(function(x){return x.id===id;}); if(m){ m.done=!m.done; saveMemo(); renderMemoList(); } }
@@ -1230,7 +1233,7 @@ function memoVisible(){
   arr.sort(function(a,b){
     if(a.pinned!==b.pinned) return a.pinned?-1:1;
     if(a.done!==b.done) return a.done?1:-1;
-    return b.ts-a.ts;
+    return (b.pos||0)-(a.pos||0);
   });
   return arr;
 }
@@ -1367,7 +1370,12 @@ function setupMemoDrag(handle, item){
       var m=memoList.find(function(x){return x.id===id;});
       if(m) newOrder.push(m);
     });
-    if(newOrder.length===memoList.length){ memoList=newOrder; saveMemo(); }
+    if(newOrder.length===memoList.length){
+      memoList=newOrder;
+      var now=Date.now();
+      memoList.forEach(function(m, i){ m.pos = now - i; });
+      saveMemo();
+    }
     _dragItem=null; _dragOrigIdx=-1;
   }
   function onCancel(e){
