@@ -1102,7 +1102,7 @@ function renderNav(c){
     + '<div class="nav-grid">'
     + navCard('daily','🎵','每日歌单','随机生成 · 锁定 · 保存今日歌单','c2')
     + navCard('fan','👥','粉丝歌单','点歌记录 · 搜索 · 分组浏览','c1')
-    + navCard('memo','📝','备忘录','找谱/升级/私下点歌/待办 随手记','c5','新')
+    + navCard('memo','📝','备忘录','找谱/升级/私下点歌/作业/待办 随手记','c5','新')
     + navCard('lib','📚','总曲库','全部歌曲分类 · 搜索 · 筛选','c3')
     + navCard('stats','📊','弹奏汇总','弹奏频次 · 排行 · 统计','c4')
     + '</div>'
@@ -1202,7 +1202,7 @@ function renderMemo(c){
   var filters=['全部','升级','私下点歌','找谱','作业','待办'];
   var fhtml=filters.map(function(f){ return '<span class="memo-filter'+(memoFilter===f?' active':'')+'" data-f="'+f+'">'+f+'</span>'; }).join('');
   var html='<div class="page">'
-    +'<div class="header"><h1>备忘录</h1><div class="sub">找谱 / 升级 / 私下点歌 / 待办 随手记</div></div>'
+    +'<div class="header"><h1>备忘录</h1><div class="sub">找谱 / 升级 / 私下点歌 / 作业 / 待办 随手记</div></div>'
     +'<div class="sync-bar"><span id="syncBadge" class="sync-badge">'+(SYNC.isOn()?'🟢 已同步':'⚪ 未登录')+'</span> <button class="btn btn-mini" id="syncBtnMemo">登录/同步</button></div>'
     +'<div class="memo-add">'
     +'<input id="memoInput" type="text" placeholder="输入备忘，如：找《xxx》谱 — 月亮点的" autocomplete="off">'
