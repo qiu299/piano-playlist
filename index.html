@@ -336,11 +336,11 @@ mark{background:rgba(232,168,56,.35);color:var(--ink);padding:0 2px;border-radiu
 .memo-tp.on[data-t="升级"]{background:var(--accent)}
 .memo-tp.on[data-t="私下点歌"]{background:var(--cat2)}
 .memo-tp.on[data-t="待办"]{background:var(--cat4);color:#fff}
-.memo-filters{display:flex;align-items:center;gap:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-bottom:1px solid var(--rule);margin:4px -14px 14px;padding:0 14px;background:var(--bg)}
+.memo-filters{display:flex;align-items:center;gap:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-bottom:1px solid var(--rule);margin:4px -14px 14px;padding:0 14px;background:var(--bg);position:relative}
 .memo-filters::-webkit-scrollbar{display:none}
 .memo-filter{flex-shrink:0;padding:11px 18px 10px;font-size:17px;font-weight:500;color:var(--muted);cursor:pointer;white-space:nowrap;position:relative;transition:color .15s;-webkit-tap-highlight-color:transparent}
 .memo-filter.active{color:var(--accent);font-weight:600}
-.memo-filter.active::after{content:'';position:absolute;left:50%;bottom:-1px;transform:translateX(-50%);width:26px;height:3px;border-radius:2px;background:var(--accent)}
+.memo-nav-ind{position:absolute;bottom:0;left:0;height:3px;background:var(--accent);border-radius:2px;opacity:0;transition:transform .28s cubic-bezier(.4,0,.2,1), width .28s, opacity .2s;pointer-events:none}
 .memo-sum{font-size:11px;color:var(--muted);margin-bottom:8px}
 .memo-item{background:var(--bg2);border:1px solid var(--rule);border-radius:14px;padding:11px;margin-bottom:9px;display:flex;gap:10px;align-items:flex-start}
 .memo-check-box{flex-shrink:0;margin-top:1px;padding:7px;margin-left:-7px;cursor:pointer}
@@ -503,7 +503,7 @@ var KEYS = {
 // 数据版本戳：每次发布新基础数据就 bump 此版本号（必须与 data.json 中的 data_version 一致）。
 // 版本变化时自动丢弃旧的本地基础库(lib/daily/stats)，加载新基础数据；
 // 个人数据(粉丝歌单 sgl_fan、添加歌曲 sgl_added、最近添加 sgl_fan_recent、保存歌单 sgl_saved)不受影响。
-var DATA_VERSION = '2026-07-31-v14';
+var DATA_VERSION = '2026-07-31-v15';
 var BUILD_VERSION = DATA_VERSION; // 内嵌不可变版本，用于检测网页代码是否过期（DATA_VERSION 可能被远程覆盖，故用此常量）
 
 // 远程数据地址（与页面同目录的 data.json）。部署后手机每次打开都会拉取最新数据，
@@ -1133,7 +1133,7 @@ function navCard(view, icon, title, desc, cls, badge){
 }
 
 /* ===== 视图: 备忘录（个人随手记，接入 SYNC 多设备同步，支持一条多标签） ===== */
-var MEMO_CATS = ['找谱','升级','私下点歌','待办'];
+var MEMO_CATS = ['升级','私下点歌','找谱','待办'];
 var memoFilter = '全部';
 
 function memoCatColor(cat){
@@ -1189,9 +1189,16 @@ function memoVisible(){
   arr.sort(function(a,b){ if(a.done!==b.done) return a.done?1:-1; return b.ts-a.ts; });
   return arr;
 }
+function moveMemoInd(){
+  var f=$('memoFilters'), ind=$('memoNavInd'); if(!f||!ind) return;
+  var act=f.querySelector('.memo-filter.active');
+  if(!act){ ind.style.opacity=0; return; }
+  ind.style.opacity=1; ind.style.width=act.offsetWidth+'px'; ind.style.transform='translateX('+act.offsetLeft+'px)';
+}
+
 function renderMemo(c){
   if(!c) return;
-  var filters=['全部','找谱','升级','私下点歌','待办'];
+  var filters=['全部','升级','私下点歌','找谱','待办'];
   var fhtml=filters.map(function(f){ return '<span class="memo-filter'+(memoFilter===f?' active':'')+'" data-f="'+f+'">'+f+'</span>'; }).join('');
   var html='<div class="page">'
     +'<div class="header"><h1>备忘录</h1><div class="sub">找谱 / 升级 / 私下点歌 / 待办 随手记</div></div>'
@@ -1201,7 +1208,7 @@ function renderMemo(c){
     +'<div class="memo-tagpick" id="memoTagPick">'+MEMO_CATS.map(function(x){return '<span class="memo-tp" data-t="'+x+'">'+x+'</span>';}).join('')+'</div>'
     +'<button class="btn-primary" id="memoAddBtn">添加</button>'
     +'</div>'
-    +'<div class="memo-filters">'+fhtml+'</div>'
+    +'<div class="memo-filters" id="memoFilters">'+fhtml+'<div class="memo-nav-ind" id="memoNavInd"></div></div>'
     +'<div class="memo-sum" id="memoSum"></div>'
     +'<div class="memo-list" id="memoList"></div>'
     +'</div>';
@@ -1215,8 +1222,8 @@ function renderMemo(c){
   $('memoInput').addEventListener('keydown', function(e){ if(e.key==='Enter') doAdd(); });
   c.querySelectorAll('.memo-tp').forEach(function(t){ t.addEventListener('click', function(){ t.classList.toggle('on'); }); });
   var sb=$('syncBtnMemo'); if(sb) sb.addEventListener('click', function(){ SYNC.openModal(); });
-  c.querySelectorAll('.memo-filter').forEach(function(f){ f.addEventListener('click', function(){ memoFilter=this.getAttribute('data-f'); renderMemoList(); }); });
-  renderMemoList();
+  c.querySelectorAll('.memo-filter').forEach(function(f){ f.addEventListener('click', function(){ memoFilter=this.getAttribute('data-f'); c.querySelectorAll('.memo-filter').forEach(function(x){ x.classList.remove('active'); }); this.classList.add('active'); moveMemoInd(); renderMemoList(); }); });
+  renderMemoList(); moveMemoInd();
   viewRendered.memo=true;
 }
 
