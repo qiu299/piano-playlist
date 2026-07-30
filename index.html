@@ -329,12 +329,18 @@ mark{background:rgba(232,168,56,.35);color:var(--ink);padding:0 2px;border-radiu
 .memo-add input:focus{border-color:var(--accent)}
 .memo-add button{width:100%;margin-top:4px;padding:12px;font-size:15px;font-weight:600;border-radius:11px;background:var(--accent);color:var(--btn-ink);border:none;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;transition:opacity .15s}
 .memo-add button:active{opacity:.85}
-.memo-tagpick{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px}
-.memo-tp{font-size:12px;padding:6px 12px;border-radius:14px;background:var(--bg);color:var(--muted);border:1px solid var(--rule);cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;transition:all .15s}
-.memo-tp.on{background:var(--accent);color:var(--btn-ink);border-color:var(--accent);font-weight:600}
-.memo-filters{display:flex;gap:7px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}
-.memo-filter{padding:5px 13px;border-radius:14px;font-size:12px;background:var(--bg2);color:var(--muted);border:1px solid var(--rule);cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;transition:all .2s}
-.memo-filter.active{background:var(--accent);color:var(--btn-ink);border-color:var(--accent);font-weight:600}
+.memo-tagpick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:11px}
+.memo-tp{font-size:13px;padding:9px 18px;border-radius:22px;background:var(--bg);color:var(--muted);border:1px solid var(--rule);cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;transition:all .15s}
+.memo-tp.on{color:var(--btn-ink);font-weight:600;border-color:transparent}
+.memo-tp.on[data-t="找谱"]{background:var(--accent2);color:#fff}
+.memo-tp.on[data-t="升级"]{background:var(--accent)}
+.memo-tp.on[data-t="私下点歌"]{background:var(--cat2)}
+.memo-tp.on[data-t="待办"]{background:var(--cat4);color:#fff}
+.memo-filters{display:flex;align-items:center;gap:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-bottom:1px solid var(--rule);margin:4px -14px 14px;padding:0 14px;background:var(--bg)}
+.memo-filters::-webkit-scrollbar{display:none}
+.memo-filter{flex-shrink:0;padding:11px 18px 10px;font-size:17px;font-weight:500;color:var(--muted);cursor:pointer;white-space:nowrap;position:relative;transition:color .15s;-webkit-tap-highlight-color:transparent}
+.memo-filter.active{color:var(--accent);font-weight:600}
+.memo-filter.active::after{content:'';position:absolute;left:50%;bottom:-1px;transform:translateX(-50%);width:26px;height:3px;border-radius:2px;background:var(--accent)}
 .memo-sum{font-size:11px;color:var(--muted);margin-bottom:8px}
 .memo-item{background:var(--bg2);border:1px solid var(--rule);border-radius:14px;padding:11px;margin-bottom:9px;display:flex;gap:10px;align-items:flex-start}
 .memo-check-box{flex-shrink:0;margin-top:1px;padding:7px;margin-left:-7px;cursor:pointer}
@@ -497,7 +503,7 @@ var KEYS = {
 // 数据版本戳：每次发布新基础数据就 bump 此版本号（必须与 data.json 中的 data_version 一致）。
 // 版本变化时自动丢弃旧的本地基础库(lib/daily/stats)，加载新基础数据；
 // 个人数据(粉丝歌单 sgl_fan、添加歌曲 sgl_added、最近添加 sgl_fan_recent、保存歌单 sgl_saved)不受影响。
-var DATA_VERSION = '2026-07-31-v13';
+var DATA_VERSION = '2026-07-31-v14';
 var BUILD_VERSION = DATA_VERSION; // 内嵌不可变版本，用于检测网页代码是否过期（DATA_VERSION 可能被远程覆盖，故用此常量）
 
 // 远程数据地址（与页面同目录的 data.json）。部署后手机每次打开都会拉取最新数据，
