@@ -327,6 +327,8 @@ mark{background:rgba(232,168,56,.35);color:var(--ink);padding:0 2px;border-radiu
 .memo-add{background:var(--bg2);border:1px solid var(--rule);border-radius:14px;padding:10px;margin-bottom:12px}
 .memo-add input{width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--rule);border-radius:10px;padding:9px 12px;color:var(--ink);font-size:14px;outline:none;margin-bottom:8px;font-family:inherit}
 .memo-add input:focus{border-color:var(--accent)}
+.memo-add button{width:100%;margin-top:4px;padding:12px;font-size:15px;font-weight:600;border-radius:11px;background:var(--accent);color:var(--btn-ink);border:none;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;transition:opacity .15s}
+.memo-add button:active{opacity:.85}
 .memo-tagpick{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px}
 .memo-tp{font-size:12px;padding:6px 12px;border-radius:14px;background:var(--bg);color:var(--muted);border:1px solid var(--rule);cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;transition:all .15s}
 .memo-tp.on{background:var(--accent);color:var(--btn-ink);border-color:var(--accent);font-weight:600}
@@ -578,9 +580,15 @@ function fetchRemoteData(){
   }catch(e){}
 }
 
-// 启动：先同步渲染首屏（按钮立即可点），再后台异步拉取最新数据自动刷新
-initApp();
-fetchRemoteData();
+// 个人数据（跟随 SYNC 多设备同步）必须在首屏渲染前就绪，否则初始 hash 直接命中粉丝/备忘视图时会因变量未赋值而白屏
+var fanRecent = [];
+try{ fanRecent = JSON.parse(localStorage.getItem(KEYS.fanRecent) || '[]'); }catch(e){}
+var memoList = [];
+try{ memoList = JSON.parse(localStorage.getItem(KEYS.memo) || '[]'); }catch(e){}
+if(!Array.isArray(memoList)) memoList = [];
+memoList = memoList.map(normalizeMemo);
+
+// 首屏渲染与远程数据拉取统一在文件末尾（所有模块变量定义就绪后）触发，避免初始 hash 命中粉丝/备忘等视图时变量尚未赋值而白屏。
 
 // 初始化数据：优先从localStorage读取，否则用注入的原始数据
 function loadData(key, original){
@@ -798,14 +806,6 @@ var SYNC = (function(){
 function saveAddedSongs(){ try{ localStorage.setItem(KEYS.added, JSON.stringify(addedSongs)); }catch(e){ toast('保存失败'); } SYNC.scheduleSave(); }
 
 // 最近添加的粉丝歌单记录（song|fan 格式）
-var fanRecent = [];
-try{ fanRecent = JSON.parse(localStorage.getItem(KEYS.fanRecent) || '[]'); }catch(e){}
-
-// 备忘录（个人数据，跟随 SYNC 多设备同步）
-var memoList = [];
-try{ memoList = JSON.parse(localStorage.getItem(KEYS.memo) || '[]'); }catch(e){}
-if(!Array.isArray(memoList)) memoList = [];
-memoList = memoList.map(normalizeMemo);
 function saveFanRecent(){ try{ localStorage.setItem(KEYS.fanRecent, JSON.stringify(fanRecent)); }catch(e){} SYNC.scheduleSave(); }
 function addFanRecent(song, fan){
   var key = song + '|' + fan;
@@ -828,9 +828,6 @@ function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function toast(msg){ var t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); },1500); }
 function debounce(fn, ms){ var t; return function(){ var ctx=this, a=arguments; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,a); }, ms||300); }; }
-
-var maxStatsCount = 0;
-for(var i=0;i<statsData.length;i++){ if(statsData[i][1]>maxStatsCount) maxStatsCount=statsData[i][1]; }
 
 /* ===== 主题切换 ===== */
 function getCurrentTheme(){
@@ -2207,6 +2204,8 @@ function saveBatchSongs(){
 /* ===== 初始化 ===== */
 // 应用启动：顶部同步调用 initApp() 渲染首屏（按钮立即可点），
 // 随后 fetchRemoteData() 后台拉取最新数据并静默刷新，绝不阻塞首屏。
+initApp();
+fetchRemoteData();
 SYNC.boot();
 
 })();
