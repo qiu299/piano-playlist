@@ -490,13 +490,14 @@ var KEYS = {
   added: 'sgl_added_v1',     // 用户添加的新歌曲(ALL_SONGS)
   fanRecent: 'sgl_fan_recent_v1', // 最近添加的粉丝歌单记录
   theme: 'sgl_theme_v1',     // 主题选择: 'dark' | 'light'
-  memo: 'sgl_memo_v1'        // 备忘录（个人随手记，接入多设备同步）
+  memo: 'sgl_memo_v1',       // 备忘录（个人随手记，接入多设备同步）
+  syncDel: 'sgl_sync_del'    // 删除标记集合 {memo:[ids], saved:[dates]}，随同步上传，用于跨设备传播删除
 };
 
 // 数据版本戳：每次发布新基础数据就 bump 此版本号（必须与 data.json 中的 data_version 一致）。
 // 版本变化时自动丢弃旧的本地基础库(lib/daily/stats)，加载新基础数据；
 // 个人数据(粉丝歌单 sgl_fan、添加歌曲 sgl_added、最近添加 sgl_fan_recent、保存歌单 sgl_saved)不受影响。
-var DATA_VERSION = '2026-07-31-v12';
+var DATA_VERSION = '2026-07-31-v13';
 var BUILD_VERSION = DATA_VERSION; // 内嵌不可变版本，用于检测网页代码是否过期（DATA_VERSION 可能被远程覆盖，故用此常量）
 
 // 远程数据地址（与页面同目录的 data.json）。部署后手机每次打开都会拉取最新数据，
@@ -628,8 +629,8 @@ var SYNC = (function(){
   var TOKEN=_t.join('');
   var API='https://api.github.com';
   // 同步范围（用户指定）：仅保存的每日歌单(saved) 与 备忘录(memo)
-  var PK=[KEYS.saved, KEYS.memo];
-  var _user=null, _pass=null, _sha=null, _status='off', _timer=null, _busy=false, _lastPull=0;
+  var PK=[KEYS.saved, KEYS.memo, KEYS.syncDel];
+  var _user=null, _pass=null, _sha=null, _status='off', _timer=null, _busy=false, _lastPull=0, _everPulled=false;
   // 冷却期：自动触发的 pull 间隔不少于 30 秒（防止手机频繁 visibilitychange 导致闪烁）
   var PULL_COOLDOWN = 30000;
 
@@ -670,14 +671,31 @@ var SYNC = (function(){
     var o={}; PK.forEach(function(k){ var v=localStorage.getItem(k); try{ o[k]=JSON.parse(v); }catch(e){ o[k]=v; } }); return o;
   }
   function merge(local, remote){
-    var out={}; PK.forEach(function(k){
+    // 合并删除标记：memo 按 id、saved 按 date。任一边删除都传播到另一边（tombstone 机制）
+    function collectDel(x){ var m={}, s={}; if(x){ (x.memo||[]).forEach(function(id){ m[id]=1; }); (x.saved||[]).forEach(function(d){ s[d]=1; }); } return {m:m,s:s}; }
+    var dl=collectDel(local[KEYS.syncDel]), dr=collectDel(remote?remote[KEYS.syncDel]:null);
+    var delM=Object.assign({}, dl.m, dr.m), delS=Object.assign({}, dl.s, dr.s);
+    var out={};
+    PK.forEach(function(k){
       var l=local[k], r=remote?remote[k]:undefined;
-      if(Array.isArray(l)||Array.isArray(r)){
+      if(k===KEYS.syncDel){
+        var mergedDel={memo:[], saved:[]}, seenM={}, seenS={};
+        [local[KEYS.syncDel], remote?remote[KEYS.syncDel]:null].forEach(function(x){
+          if(x){ (x.memo||[]).forEach(function(id){ if(!seenM[id]){seenM[id]=1;mergedDel.memo.push(id);} }); (x.saved||[]).forEach(function(d){ if(!seenS[d]){seenS[d]=1;mergedDel.saved.push(d);} }); }
+        });
+        out[k]=mergedDel; return;
+      }
+      if(k===KEYS.memo || k===KEYS.saved){
+        // 按唯一键去重合并（memo→id，saved→date），再剔除两端任一标记删除的项
+        var idKey=(k===KEYS.saved)?'date':'id';
         var a=Array.isArray(l)?l:[], b=Array.isArray(r)?r:[], seen={}, arr=[];
-        a.concat(b).forEach(function(x){ var j=JSON.stringify(x); if(!seen[j]){ seen[j]=1; arr.push(x); } });
-        out[k]=arr;
-      } else { out[k]=(l!==undefined && l!==null)?l:r; }
-    }); return out;
+        a.concat(b).forEach(function(x){ var jk=(x&&x[idKey]!=null)?x[idKey]:JSON.stringify(x); if(!seen[jk]){ seen[jk]=1; arr.push(x); } });
+        arr=arr.filter(function(x){ var jk=(x&&x[idKey]!=null)?x[idKey]:''; return !(k===KEYS.saved?delS[jk]:delM[jk]); });
+        out[k]=arr; return;
+      }
+      out[k]=(l!==undefined && l!==null)?l:r;
+    });
+    return out;
   }
   function reconcileAdded(){
     var names={}; ALL_SONGS.songs.forEach(function(s){ names[s.name]=1; });
@@ -694,6 +712,8 @@ var SYNC = (function(){
     try{ memoList=JSON.parse(localStorage.getItem(KEYS.memo)||'[]'); }catch(e){}
     if(!Array.isArray(memoList)) memoList=[];
     memoList=memoList.map(normalizeMemo);
+    // 同步运行时删除标记（与写入 localStorage 的 syncDel 保持一致，避免下次保存时丢失从云端拉来的删除标记）
+    try{ var _sd=JSON.parse(localStorage.getItem(KEYS.syncDel)||'{}'); delMemoIds=_sd.memo||[]; delSavedIds=_sd.saved||[]; }catch(e){}
     updateBadge();
   }
   function updateBadge(){
@@ -715,10 +735,10 @@ var SYNC = (function(){
       _sha = f? f.sha : null;
       // 合并前重新采集一次 localStorage，确保网络请求期间用户新增的数据不丢失
       var latest = collect();
-      if(!f){ return pushBody(latest).then(function(){ writeBack(latest); _busy=false; setStatus('ok'); }); }
+      if(!f){ return pushBody(latest).then(function(){ writeBack(latest); _everPulled=true; _busy=false; setStatus('ok'); }); }
       return sDec(JSON.parse(b2s(ub64(f.content))), _pass).then(function(remote){
-        var m1=merge(latest, remote); return pushBody(m1).then(function(){ writeBack(m1); _busy=false; setStatus('ok'); });
-      }).catch(function(){ var m2=latest; return pushBody(m2).then(function(){ writeBack(m2); _busy=false; setStatus('ok'); }); });
+        var m1=merge(latest, remote); return pushBody(m1).then(function(){ writeBack(m1); _everPulled=true; _busy=false; setStatus('ok'); });
+      }).catch(function(){ var m2=latest; return pushBody(m2).then(function(){ writeBack(m2); _everPulled=true; _busy=false; setStatus('ok'); }); });
     }).catch(function(e){ _busy=false; setStatus('error'); console.warn('[sync] push 失败', e); });
   }
   // silent=true 表示后台自动拉取（切前台/恢复会话/网络恢复），不打断徽标显示，避免“同步中↔已同步”不断闪烁
@@ -731,7 +751,7 @@ var SYNC = (function(){
       _sha=f.sha;
       return sDec(JSON.parse(b2s(ub64(f.content))), _pass).then(function(remote){
         // pull 只负责“拉取并合并到本地”；本地改动由 scheduleSave 负责上传，故此处不再回推，避免每个自动拉取都产生一次写请求与同步中闪烁
-        var merged=merge(collect(), remote); writeBack(merged);
+        var merged=merge(collect(), remote); writeBack(merged); _everPulled=true;
       }).then(function(){ _busy=false; if(!silent) setStatus('ok'); })
         .catch(function(e){ _busy=false; if(!silent) setStatus('error'); console.warn('[sync] pull 解密失败', e); });
     }).catch(function(e){
@@ -766,7 +786,7 @@ var SYNC = (function(){
         if(!f){ toast('用户不存在，请先注册'); return; }
         sDec(JSON.parse(b2s(ub64(f.content))), p).then(function(remote){
           _sha=f.sha; setSession(u,p);
-          var merged=merge(collect(), remote); writeBack(merged);
+          var merged=merge(collect(), remote); writeBack(merged); _everPulled=true;
           pushBody(merged).then(function(){ toast('登录成功，已同步'); afterAuth(); });
         }).catch(function(){ toast('密码错误'); });
       }
@@ -819,6 +839,7 @@ var SYNC = (function(){
 
   function boot(){
     if(!window.crypto || !crypto.subtle){ setStatus('off'); return; }
+    loadSyncDel();
     var s; try{ s=JSON.parse(localStorage.getItem('sgl_sync_sess')||'null'); }catch(e){}
     window.addEventListener('online', function(){ if(_user && Date.now()-_lastPull>PULL_COOLDOWN) pull(true); });
     window.addEventListener('offline', function(){ setStatus('off'); });
@@ -1142,6 +1163,10 @@ function saveMemo(){
   try{ localStorage.setItem(KEYS.memo, JSON.stringify(memoList)); }catch(e){}
   if(SYNC && SYNC.isOn()) SYNC.scheduleSave();
 }
+// 删除标记（tombstone）：删除的 memo id / saved date 记录于此，随同步上传，使删除可跨设备传播
+var delMemoIds=[], delSavedIds=[];
+function loadSyncDel(){ try{ var d=JSON.parse(localStorage.getItem(KEYS.syncDel)||'{}'); delMemoIds=d.memo||[]; delSavedIds=d.saved||[]; }catch(e){ delMemoIds=[]; delSavedIds=[]; } }
+function saveSyncDel(){ try{ localStorage.setItem(KEYS.syncDel, JSON.stringify({memo:delMemoIds, saved:delSavedIds})); }catch(e){} }
 function addMemo(text, tags){
   text=(text||'').trim(); if(!text) return false;
   if(!Array.isArray(tags) || !tags.length) tags=['待办'];
@@ -1149,7 +1174,7 @@ function addMemo(text, tags){
   saveMemo(); renderMemoList(); return true;
 }
 function toggleMemo(id){ var m=memoList.find(function(x){return x.id===id;}); if(m){ m.done=!m.done; saveMemo(); renderMemoList(); } }
-function delMemo(id){ memoList=memoList.filter(function(x){return x.id!==id;}); saveMemo(); renderMemoList(); }
+function delMemo(id){ memoList=memoList.filter(function(x){return x.id!==id;}); if(delMemoIds.indexOf(id)<0) delMemoIds.push(id); saveSyncDel(); saveMemo(); renderMemoList(); }
 function editMemo(id, t){ var m=memoList.find(function(x){return x.id===id;}); if(m){ t=(t||'').trim(); if(t){ m.text=t; saveMemo(); renderMemoList(); } } }
 
 function memoVisible(){
@@ -1434,7 +1459,10 @@ function renderSavedDaily(){
       var idx=parseInt(this.getAttribute('data-del'));
       var lists=[]; try{ lists=JSON.parse(localStorage.getItem(KEYS.saved)||'[]'); }catch(e){}
       confirmDialog('删除 '+lists[idx].date+' 的歌单？', function(){
-        lists.splice(idx,1); localStorage.setItem(KEYS.saved,JSON.stringify(lists)); renderSavedDaily(); toast('已删除'); SYNC.scheduleSave();
+        var removed=lists[idx];
+        lists.splice(idx,1); localStorage.setItem(KEYS.saved,JSON.stringify(lists));
+        if(removed && delSavedIds.indexOf(removed.date)<0) delSavedIds.push(removed.date);
+        saveSyncDel(); renderSavedDaily(); toast('已删除'); SYNC.scheduleSave();
       });
     });
   });
