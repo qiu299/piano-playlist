@@ -713,7 +713,19 @@ var SYNC = (function(){
         // 按唯一键去重合并（memo→id，saved→date），再剔除两端任一标记删除的项
         var idKey=(k===KEYS.saved)?'date':'id';
         var a=Array.isArray(l)?l:[], b=Array.isArray(r)?r:[], seen={}, arr=[];
-        a.concat(b).forEach(function(x){ var jk=(x&&x[idKey]!=null)?x[idKey]:JSON.stringify(x); if(!seen[jk]){ seen[jk]=1; arr.push(x); } });
+        a.concat(b).forEach(function(x){
+          var jk=(x&&x[idKey]!=null)?x[idKey]:JSON.stringify(x);
+          if(!seen[jk]){ seen[jk]=x; arr.push(x); return; }
+          // 字段级合并：local 优先，但 remote 的 sticky 布尔字段（pinned/done）若为 true 则覆盖
+          if(k===KEYS.memo){
+            var ex=seen[jk];
+            Object.keys(x).forEach(function(key){
+              if((key==='pinned'||key==='done') && x[key]===true) ex[key]=true;
+              else if(key==='pos' && typeof x[key]==='number' && (typeof ex[key]!=='number'||x[key]>ex[key])) ex[key]=x[key];
+              else if(ex[key]===undefined) ex[key]=x[key];
+            });
+          }
+        });
         arr=arr.filter(function(x){ var jk=(x&&x[idKey]!=null)?x[idKey]:''; return !(k===KEYS.saved?delS[jk]:delM[jk]); });
         out[k]=arr; return;
       }
@@ -1173,7 +1185,7 @@ function navCard(view, icon, title, desc, cls, badge){
 
 /* ===== 视图: 备忘录（个人随手记，接入 SYNC 多设备同步，支持一条多标签） ===== */
 var MEMO_CATS = ['升级','私下点歌','找谱','作业','待办'];
-var memoFilter = '全部';
+var memoFilter = '升级';
 
 function memoCatColor(cat){
   return ({
