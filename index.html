@@ -606,7 +606,7 @@ function loadData(key, original){
  * 隐私：密码本地派生密钥，数据 AES-GCM 加密后上传，仓库内为密文，他人无法解密
  * 令牌：下方 TOKEN 部署前替换为只限该仓库的 fine-grained PAT（暴露在网页中是已知权衡，
  *       仅能读写该仓库，且数据已加密，他人即使拿到令牌也读不到内容）
- * 同步范围：今日歌单(saved)/添加歌曲(added)/最近点歌(fanRecent)/主题(theme)
+ * 同步范围：保存的每日歌单(saved)/备忘录(memo)
  */
 var SYNC = (function(){
   var OWNER='qiu299', REPO='playlist-sync';
@@ -614,7 +614,8 @@ var SYNC = (function(){
   var _t=['github_pat_','11CJZYWWI0vvbgfu0tHJIh_lI','BC1b1ZysUPqzApUJdwTKxicmKnFTxFJDVt9s26lY9J5VLUP53Un2wDsTO'];
   var TOKEN=_t.join('');
   var API='https://api.github.com';
-  var PK=[KEYS.saved, KEYS.added, KEYS.fanRecent, KEYS.theme, KEYS.memo];
+  // 同步范围（用户指定）：仅保存的每日歌单(saved) 与 备忘录(memo)
+  var PK=[KEYS.saved, KEYS.memo];
   var _user=null, _pass=null, _sha=null, _status='off', _timer=null, _busy=false, _lastPull=0;
   // 冷却期：自动触发的 pull 间隔不少于 30 秒（防止手机频繁 visibilitychange 导致闪烁）
   var PULL_COOLDOWN = 30000;
@@ -773,7 +774,7 @@ var SYNC = (function(){
       body.innerHTML='<h3>已登录</h3><div class="sub">账号：'+esc(_user)+'</div>'
         +'<div class="row"><button id="syncPull" style="background:var(--accent,#4f7cff)">立即同步</button>'
         +'<button id="syncLogout" style="background:#c0392b">退出登录</button></div>'
-        +'<div class="sync-info">数据已加密保存在 GitHub，手机/iPad/电脑登录同一账号即可同步今日歌单等个人数据。</div>';
+        +'<div class="sync-info">数据已加密保存在 GitHub，手机/iPad/电脑登录同一账号即可同步保存的每日歌单与备忘录。</div>';
       document.getElementById('syncPull').onclick=function(){ closeModal(); pull(); };
       document.getElementById('syncLogout').onclick=function(){ logout(); renderModal(); };
     } else {
@@ -781,7 +782,7 @@ var SYNC = (function(){
         +'<input id="syncUser" placeholder="用户名（字母/数字）" autocapitalize="off" autocomplete="off" spellcheck="false">'
         +'<input id="syncPass" type="password" placeholder="密码（至少4位）" autocomplete="off">'
         +'<div class="row"><button id="syncGo" style="background:var(--accent,#4f7cff)">登录</button></div>'
-        +'<div class="sync-info">登录后今日歌单/添加歌曲/最近点歌/主题会在多设备间自动同步。数据本地加密上传，他人无法读取。</div>';
+        +'<div class="sync-info">登录后保存的每日歌单与备忘录会在多设备间自动同步。数据本地加密上传，他人无法读取。</div>';
       var reg=false;
       document.getElementById('tabLogin').onclick=function(){ reg=false; this.classList.add('active'); document.getElementById('tabReg').classList.remove('active'); document.getElementById('syncGo').textContent='登录'; };
       document.getElementById('tabReg').onclick=function(){ reg=true; this.classList.add('active'); document.getElementById('tabLogin').classList.remove('active'); document.getElementById('syncGo').textContent='注册'; };
