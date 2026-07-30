@@ -1133,7 +1133,7 @@ function navCard(view, icon, title, desc, cls, badge){
 }
 
 /* ===== 视图: 备忘录（个人随手记，接入 SYNC 多设备同步，支持一条多标签） ===== */
-var MEMO_CATS = ['升级','私下点歌','找谱','待办'];
+var MEMO_CATS = ['升级','私下点歌','找谱','作业','待办'];
 var memoFilter = '全部';
 
 function memoCatColor(cat){
@@ -1141,7 +1141,8 @@ function memoCatColor(cat){
     '找谱':['rgba(199,91,154,.18)','#c75b9a'],
     '升级':['rgba(232,168,56,.18)','#e8a838'],
     '私下点歌':['rgba(212,83,126,.20)','#D4537E'],
-    '待办':['rgba(91,143,181,.18)','#6b8fb5']
+    '待办':['rgba(91,143,181,.18)','#6b8fb5'],
+    '作业':['rgba(102,178,128,.18)','#66b280']
   })[cat] || ['rgba(91,143,181,.18)','#6b8fb5'];
 }
 // 旧数据（单 cat）兼容成 tags 数组；"其他"归类到"待办"
@@ -1198,7 +1199,7 @@ function moveMemoInd(){
 
 function renderMemo(c){
   if(!c) return;
-  var filters=['全部','升级','私下点歌','找谱','待办'];
+  var filters=['全部','升级','私下点歌','找谱','作业','待办'];
   var fhtml=filters.map(function(f){ return '<span class="memo-filter'+(memoFilter===f?' active':'')+'" data-f="'+f+'">'+f+'</span>'; }).join('');
   var html='<div class="page">'
     +'<div class="header"><h1>备忘录</h1><div class="sub">找谱 / 升级 / 私下点歌 / 待办 随手记</div></div>'
