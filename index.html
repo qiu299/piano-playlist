@@ -497,6 +497,7 @@ var KEYS = {
 // 版本变化时自动丢弃旧的本地基础库(lib/daily/stats)，加载新基础数据；
 // 个人数据(粉丝歌单 sgl_fan、添加歌曲 sgl_added、最近添加 sgl_fan_recent、保存歌单 sgl_saved)不受影响。
 var DATA_VERSION = '2026-07-30-v10';
+var BUILD_VERSION = DATA_VERSION; // 内嵌不可变版本，用于检测网页代码是否过期（DATA_VERSION 可能被远程覆盖，故用此常量）
 
 // 远程数据地址（与页面同目录的 data.json）。部署后手机每次打开都会拉取最新数据，
 // 因此 URL 固定、无需重装；内嵌的 __FAN_DATA__ 等仅作为离线/首屏兜底。
@@ -555,6 +556,18 @@ function fetchRemoteData(){
       .then(function(r){ return r.ok ? r.json() : Promise.reject('http ' + r.status); })
       .then(function(d){
         try{
+          // 版本变更自动刷新：若远程数据版本高于本机内嵌版本，说明网页代码已更新（GitHub Pages 已部署），
+          // 旧 HTML 可能仍带旧 bug（如粉丝栏点不开），强制刷新拉取新代码。带重试上限避免 CDN 延迟时死循环。
+          if(d.data_version && d.data_version !== BUILD_VERSION){
+            var vt = parseInt(localStorage.getItem('sgl_ver_tries')||'0', 10);
+            if(vt >= 4){ try{ localStorage.removeItem('sgl_ver_tries'); }catch(e){} }
+            else {
+              try{ localStorage.setItem('sgl_ver_tries', String(vt+1)); }catch(e){}
+              toast('发现新版本，正在刷新…');
+              setTimeout(function(){ location.href = location.href.split('#')[0] + '?v=' + Date.now() + location.hash; }, 900);
+              return;
+            }
+          }
           FAN_DATA = d.fan_data;
           FAN_ORDER = d.fan_order;
           ALL_SONGS = d.all_songs;
