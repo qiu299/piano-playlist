@@ -322,6 +322,30 @@ mark{background:rgba(232,168,56,.35);color:var(--ink);padding:0 2px;border-radiu
 .theme-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 16px;border-radius:18px;font-size:12px;cursor:pointer;border:1px solid var(--rule);background:var(--bg2);color:var(--muted);transition:all .2s;user-select:none;-webkit-tap-highlight-color:transparent;font-family:inherit}
 .theme-btn:active{transform:scale(.97)}
 .theme-btn.active{background:var(--accent);color:var(--btn-ink);border-color:var(--accent);font-weight:600}
+
+/* ===== 备忘录视图 ===== */
+.memo-add{background:var(--bg2);border:1px solid var(--rule);border-radius:14px;padding:10px;margin-bottom:12px}
+.memo-add input{width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--rule);border-radius:10px;padding:9px 12px;color:var(--ink);font-size:14px;outline:none;margin-bottom:8px;font-family:inherit}
+.memo-add input:focus{border-color:var(--accent)}
+.memo-add-row{display:flex;gap:8px;align-items:center}
+.memo-cat{flex:1;background:var(--bg);border:1px solid var(--rule);border-radius:10px;padding:8px;color:var(--ink);font-size:14px;font-family:inherit;outline:none}
+.memo-filters{display:flex;gap:7px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}
+.memo-filter{padding:5px 13px;border-radius:14px;font-size:12px;background:var(--bg2);color:var(--muted);border:1px solid var(--rule);cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;transition:all .2s}
+.memo-filter.active{background:var(--accent);color:var(--btn-ink);border-color:var(--accent);font-weight:600}
+.memo-sum{font-size:11px;color:var(--muted);margin-bottom:8px}
+.memo-item{background:var(--bg2);border:1px solid var(--rule);border-radius:14px;padding:11px;margin-bottom:9px;display:flex;gap:10px;align-items:flex-start}
+.memo-check-box{flex-shrink:0;margin-top:1px}
+.memo-check{width:19px;height:19px;border-radius:50%;border:2px solid var(--muted);box-sizing:border-box}
+.memo-check.done{background:var(--success);border-color:var(--success);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
+.memo-body{flex:1;min-width:0}
+.memo-text{font-size:14px;line-height:1.5;word-break:break-word}
+.memo-meta{margin-top:6px;display:flex;align-items:center;gap:7px}
+.memo-tag{font-size:11px;padding:2px 9px;border-radius:10px}
+.memo-time{font-size:11px;color:var(--muted)}
+.memo-del{flex-shrink:0;color:var(--danger);font-size:18px;line-height:1;cursor:pointer;padding:0 2px}
+.memo-empty{text-align:center;color:var(--muted);font-size:13px;padding:30px 0}
+.memo-btn{padding:3px 9px;font-size:12px;border-radius:8px;cursor:pointer;border:1px solid rgba(199,91,154,.4);background:rgba(199,91,154,.1);color:var(--accent2);transition:all .15s;font-family:inherit;white-space:nowrap;flex-shrink:0;min-height:32px;display:inline-flex;align-items:center;justify-content:center}
+.memo-btn:active{border-color:var(--accent2);background:rgba(199,91,154,.2)}
 .theme-btn .ticon{font-size:14px;line-height:1}
 
 /* ===== 多设备同步条 ===== */
@@ -353,6 +377,7 @@ mark{background:rgba(232,168,56,.35);color:var(--ink);padding:0 2px;border-radiu
   <a href="#fan"><span class="icon">👥</span>粉丝</a>
   <a href="#lib"><span class="icon">📚</span>曲库</a>
   <a href="#stats"><span class="icon">📊</span>汇总</a>
+  <a href="#memo"><span class="icon">📝</span>备忘</a>
 </nav>
 <div id="toast"></div>
 <button class="fab" id="fabBtn">+</button>
@@ -463,7 +488,8 @@ var KEYS = {
   saved: 'sgl_saved_v2',     // 每日歌单保存
   added: 'sgl_added_v1',     // 用户添加的新歌曲(ALL_SONGS)
   fanRecent: 'sgl_fan_recent_v1', // 最近添加的粉丝歌单记录
-  theme: 'sgl_theme_v1'      // 主题选择: 'dark' | 'light'
+  theme: 'sgl_theme_v1',     // 主题选择: 'dark' | 'light'
+  memo: 'sgl_memo_v1'        // 备忘录（个人随手记，接入多设备同步）
 };
 
 // 数据版本戳：每次发布新基础数据就 bump 此版本号（必须与 data.json 中的 data_version 一致）。
@@ -581,7 +607,7 @@ var SYNC = (function(){
   var _t=['github_pat_','11CJZYWWI0vvbgfu0tHJIh_lI','BC1b1ZysUPqzApUJdwTKxicmKnFTxFJDVt9s26lY9J5VLUP53Un2wDsTO'];
   var TOKEN=_t.join('');
   var API='https://api.github.com';
-  var PK=[KEYS.saved, KEYS.added, KEYS.fanRecent, KEYS.theme];
+  var PK=[KEYS.saved, KEYS.added, KEYS.fanRecent, KEYS.theme, KEYS.memo];
   var _user=null, _pass=null, _sha=null, _status='off', _timer=null, _busy=false;
 
   function devKey(){
@@ -634,6 +660,9 @@ var SYNC = (function(){
     try{ fanRecent=JSON.parse(localStorage.getItem(KEYS.fanRecent)||'[]'); }catch(e){}
     try{ var t=localStorage.getItem(KEYS.theme); if(t) setTheme(t); }catch(e){}
     if(currentView==='daily'){ try{ renderSavedDaily(); }catch(e){} }
+    try{ memoList=JSON.parse(localStorage.getItem(KEYS.memo)||'[]'); }catch(e){}
+    if(!Array.isArray(memoList)) memoList=[];
+    if(currentView==='memo'){ try{ renderMemo(document.getElementById('view')); }catch(e){} }
     updateBadge();
   }
   function updateBadge(){
@@ -771,6 +800,11 @@ function saveAddedSongs(){ try{ localStorage.setItem(KEYS.added, JSON.stringify(
 // 最近添加的粉丝歌单记录（song|fan 格式）
 var fanRecent = [];
 try{ fanRecent = JSON.parse(localStorage.getItem(KEYS.fanRecent) || '[]'); }catch(e){}
+
+// 备忘录（个人数据，跟随 SYNC 多设备同步）
+var memoList = [];
+try{ memoList = JSON.parse(localStorage.getItem(KEYS.memo) || '[]'); }catch(e){}
+if(!Array.isArray(memoList)) memoList = [];
 function saveFanRecent(){ try{ localStorage.setItem(KEYS.fanRecent, JSON.stringify(fanRecent)); }catch(e){} SYNC.scheduleSave(); }
 function addFanRecent(song, fan){
   var key = song + '|' + fan;
@@ -833,7 +867,7 @@ var currentView = '';
 
 function route(){
   var hash = location.hash.slice(1) || 'nav';
-  if(!['nav','daily','fan','lib','stats'].includes(hash)) hash = 'nav';
+  if(!['nav','daily','fan','lib','stats','memo'].includes(hash)) hash = 'nav';
   if(currentView === hash) return;
   currentView = hash;
   // 更新tab高亮
@@ -849,6 +883,7 @@ function route(){
     case 'fan': renderFan(view); break;
     case 'lib': renderLib(view); break;
     case 'stats': renderStats(view); break;
+    case 'memo': renderMemo(view); break;
   }
 }
 
@@ -1016,6 +1051,7 @@ function renderNav(c){
     + navCard('fan','👥','粉丝歌单','点歌记录 · 搜索 · 分组浏览','c1')
     + navCard('lib','📚','总曲库','全部歌曲分类 · 搜索 · 筛选','c3')
     + navCard('stats','📊','弹奏汇总','弹奏频次 · 排行 · 统计','c4')
+    + navCard('memo','📝','备忘录','找谱/升级/待办 随手记','c5','新')
     + '</div>'
     + '<div class="reset-bar"><button class="btn btn-danger" id="resetDataBtn">重置所有数据（清除编辑）</button></div>'
     + '<div style="text-align:center;color:var(--muted);font-size:12px;padding:6px 0 2px">数据版本：' + DATA_VERSION + '（联网自动更新）</div>'
@@ -1038,8 +1074,105 @@ function renderNav(c){
   if(sb) sb.addEventListener('click', function(){ SYNC.openModal(); });
   viewRendered.nav = true;
 }
-function navCard(view, icon, title, desc, cls){
-  return '<a class="nav-card ' + cls + '" href="#' + view + '"><span class="nc-icon">' + icon + '</span><div class="nc-title">' + title + '</div><div class="nc-desc">' + desc + '</div></a>';
+function navCard(view, icon, title, desc, cls, badge){
+  var bdg = badge ? ' <span class="new-badge">'+badge+'</span>' : '';
+  return '<a class="nav-card ' + cls + '" href="#' + view + '"><span class="nc-icon">' + icon + '</span><div class="nc-title">' + title + bdg + '</div><div class="nc-desc">' + desc + '</div></a>';
+}
+
+/* ===== 视图: 备忘录（个人随手记，接入 SYNC 多设备同步） ===== */
+var MEMO_CATS = ['找谱','升级','待办','其他'];
+var memoFilter = '全部';
+
+function memoCatColor(cat){
+  return ({
+    '找谱':['rgba(199,91,154,.18)','#c75b9a'],
+    '升级':['rgba(232,168,56,.18)','#e8a838'],
+    '待办':['rgba(91,143,181,.18)','#6b8fb5'],
+    '其他':['rgba(168,155,184,.15)','#a89bb8']
+  })[cat] || ['rgba(168,155,184,.15)','#a89bb8'];
+}
+function relTime(ts){
+  var d=Date.now()-ts, m=Math.floor(d/60000);
+  if(m<1) return '刚刚';
+  if(m<60) return m+'分钟前';
+  var h=Math.floor(m/60); if(h<24) return h+'小时前';
+  var day=Math.floor(h/24); if(day<7) return day+'天前';
+  var dt=new Date(ts); return (dt.getMonth()+1)+'/'+dt.getDate();
+}
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+function saveMemo(){
+  try{ localStorage.setItem(KEYS.memo, JSON.stringify(memoList)); }catch(e){}
+  if(SYNC && SYNC.isOn()) SYNC.scheduleSave();
+}
+function addMemo(text, cat){
+  text=(text||'').trim(); if(!text) return false;
+  memoList.unshift({id:uid(), text:text, cat:cat||'其他', done:false, ts:Date.now()});
+  saveMemo(); renderMemo($('view')); return true;
+}
+function toggleMemo(id){ var m=memoList.find(function(x){return x.id===id;}); if(m){ m.done=!m.done; saveMemo(); renderMemo($('view')); } }
+function delMemo(id){ memoList=memoList.filter(function(x){return x.id!==id;}); saveMemo(); renderMemo($('view')); }
+function editMemo(id, t){ var m=memoList.find(function(x){return x.id===id;}); if(m){ t=(t||'').trim(); if(t){ m.text=t; saveMemo(); renderMemo($('view')); } } }
+function addMemoFromFan(song, fan){
+  var text='找《'+song+'》谱 — 粉丝「'+fan+'」点的';
+  if(memoList.some(function(m){ return !m.done && m.cat==='找谱' && m.text===text; })){ toast('已在备忘中'); return; }
+  addMemo(text,'找谱'); toast('已加入备忘（找谱）');
+}
+
+function memoVisible(){
+  var f=memoFilter, arr=memoList.slice();
+  if(f==='未完成') arr=arr.filter(function(m){return !m.done;});
+  else if(f && f!=='全部') arr=arr.filter(function(m){return m.cat===f;});
+  arr.sort(function(a,b){ if(a.done!==b.done) return a.done?1:-1; return b.ts-a.ts; });
+  return arr;
+}
+function renderMemo(c){
+  if(!c) return;
+  var filters=['全部','找谱','升级','待办','其他','未完成'];
+  var fhtml=filters.map(function(f){ return '<span class="memo-filter'+(memoFilter===f?' active':'')+'" data-f="'+f+'">'+f+'</span>'; }).join('');
+  var undone=memoList.filter(function(m){return !m.done;}).length, doneN=memoList.length-undone;
+  var list=memoVisible();
+  var html='<div class="page">'
+    +'<div class="header"><h1>备忘录</h1><div class="sub">找谱 / 升级 / 待办 随手记</div></div>'
+    +'<div class="sync-bar"><span id="syncBadge" class="sync-badge">'+(SYNC.isOn()?'🟢 已同步':'⚪ 未登录')+'</span> <button class="btn btn-mini" id="syncBtnMemo">登录/同步</button></div>'
+    +'<div class="memo-add">'
+    +'<input id="memoInput" type="text" placeholder="输入备忘，如：找《xxx》谱 — 月亮点的" autocomplete="off">'
+    +'<div class="memo-add-row"><select id="memoCat" class="memo-cat">'+MEMO_CATS.map(function(x){return '<option>'+x+'</option>';}).join('')+'</select>'
+    +'<button class="btn-primary" id="memoAddBtn">添加</button></div>'
+    +'</div>'
+    +'<div class="memo-filters">'+fhtml+'</div>'
+    +'<div class="memo-sum">待办 '+undone+' · 已完成 '+doneN+'</div>';
+  if(list.length===0){ html+='<div class="memo-empty">还没有备忘，上面输入一条吧</div>'; }
+  else {
+    list.forEach(function(m){
+      var cc=memoCatColor(m.cat);
+      var check = m.done?'<div class="memo-check done">✓</div>':'<div class="memo-check"></div>';
+      var tstyle = m.done?'color:var(--muted);text-decoration:line-through;':'color:var(--ink);';
+      html+='<div class="memo-item" data-id="'+m.id+'">'
+        +'<div class="memo-check-box" data-act="toggle">'+check+'</div>'
+        +'<div class="memo-body"><div class="memo-text" style="'+tstyle+'" data-act="edit">'+esc(m.text)+'</div>'
+        +'<div class="memo-meta"><span class="memo-tag" style="background:'+cc[0]+';color:'+cc[1]+';border:1px solid '+cc[0]+';">'+m.cat+'</span> <span class="memo-time">'+relTime(m.ts)+'</span></div></div>'
+        +'<div class="memo-del" data-act="del">×</div>'
+        +'</div>';
+    });
+  }
+  html+='</div>';
+  c.innerHTML=html;
+  function doAdd(){ var inp=$('memoInput'); if(addMemo(inp.value, $('memoCat').value)){ inp.value=''; } }
+  $('memoAddBtn').addEventListener('click', doAdd);
+  $('memoInput').addEventListener('keydown', function(e){ if(e.key==='Enter') doAdd(); });
+  var sb=$('syncBtnMemo'); if(sb) sb.addEventListener('click', function(){ SYNC.openModal(); });
+  c.querySelectorAll('.memo-filter').forEach(function(f){ f.addEventListener('click', function(){ memoFilter=this.getAttribute('data-f'); renderMemo(c); }); });
+  c.querySelectorAll('.memo-item').forEach(function(it){
+    it.addEventListener('click', function(e){
+      var act=e.target.getAttribute('data-act'); if(!act) return;
+      var id=it.getAttribute('data-id');
+      if(act==='toggle'){ toggleMemo(id); }
+      else if(act==='del'){ confirmDialog('删除这条备忘？', function(){ delMemo(id); }); }
+      else if(act==='edit'){ var m=memoList.find(function(x){return x.id===id;}); if(m) openEditModal(m.text, function(v){ editMemo(id, v); }); }
+    });
+  });
+  viewRendered.memo=true;
 }
 
 /* ===== 视图2: 每日歌单 ===== */
@@ -1416,15 +1549,16 @@ function renderFanFlat(){
       html+='<div class="flat-row"><span class="flat-idx">'+(i+1)+'</span><span class="flat-song">'+esc(song)+newBadge+'</span><span class="flat-fan">'+esc(fan)+'</span>'+fanTierBadge(tier);
       html+='<button class="move-btn" data-gidx="'+gIdx+'" data-dir="up"'+(i===0?' disabled':'')+'>↑</button>';
       html+='<button class="move-btn" data-gidx="'+gIdx+'" data-dir="down"'+(i===end-1?' disabled':'')+'>↓</button>';
-      html+='<button class="del-btn" data-gidx="'+gIdx+'">🗑️</button></div>';
+      html+='<button class="memo-btn" data-gidx="'+gIdx+'">找谱</button><button class="del-btn" data-gidx="'+gIdx+'">🗑️</button></div>';
     } else {
-      html+='<div class="flat-row" data-gidx="'+gIdx+'"><span class="flat-idx">'+(i+1)+'</span><span class="flat-song">'+highlightFan(song,q)+newBadge+'</span><span class="flat-fan">'+highlightFan(fan,q)+'</span>'+fanTierBadge(tier)+'<button class="eb" data-gidx="'+gIdx+'">✏️</button><button class="del-btn" data-gidx="'+gIdx+'">🗑️</button></div>';
+      html+='<div class="flat-row" data-gidx="'+gIdx+'"><span class="flat-idx">'+(i+1)+'</span><span class="flat-song">'+highlightFan(song,q)+newBadge+'</span><span class="flat-fan">'+highlightFan(fan,q)+'</span>'+fanTierBadge(tier)+'<button class="memo-btn" data-gidx="'+gIdx+'">找谱</button><button class="eb" data-gidx="'+gIdx+'">✏️</button><button class="del-btn" data-gidx="'+gIdx+'">🗑️</button></div>';
     }
   }
   list.innerHTML=html;
   renderFanPagination(pages);
   bindFanEdit();
   bindFanDeleteSort();
+  bindFanMemo();
 }
 
 function renderFanGroup(){
@@ -1446,7 +1580,7 @@ function renderFanGroup(){
       var gIdx=fanData.indexOf(s);
       var isNew = isFanRecent(s[0]||'', s[1]||'');
       var newBadge = isNew ? '<span class="new-badge">NEW</span>' : '';
-      html+='<div class="song-row" data-gidx="'+gIdx+'"><span class="si2">'+(si+1)+'</span><span class="sn2">'+esc(s[0]||'')+newBadge+'</span>'+fanTierBadge(s[2]||1)+'<button class="eb" data-gidx="'+gIdx+'">✏️</button><button class="del-btn" data-gidx="'+gIdx+'">🗑️</button></div>';
+      html+='<div class="song-row" data-gidx="'+gIdx+'"><span class="si2">'+(si+1)+'</span><span class="sn2">'+esc(s[0]||'')+newBadge+'</span>'+fanTierBadge(s[2]||1)+'<button class="memo-btn" data-gidx="'+gIdx+'">找谱</button><button class="eb" data-gidx="'+gIdx+'">✏️</button><button class="del-btn" data-gidx="'+gIdx+'">🗑️</button></div>';
     });
     html+='</div></div>';
   });
@@ -1461,6 +1595,7 @@ function renderFanGroup(){
   });
   bindFanEdit();
   bindFanDeleteSort();
+  bindFanMemo();
 }
 
 function bindFanEdit(){
@@ -1512,6 +1647,17 @@ function bindFanDeleteSort(){
       });
     });
   }
+}
+
+function bindFanMemo(){
+  document.querySelectorAll('#fanList .memo-btn').forEach(function(b){
+    b.addEventListener('click', function(e){
+      e.stopPropagation();
+      var gi=parseInt(this.getAttribute('data-gidx'));
+      var d=fanData[gi]; if(!d) return;
+      addMemoFromFan(d[0]||'', d[1]||'');
+    });
+  });
 }
 
 function renderFanPagination(pages){
@@ -1855,6 +2001,7 @@ function rerenderView(){
     case 'fan': renderFan(view); break;
     case 'lib': renderLib(view); break;
     case 'stats': renderStats(view); break;
+    case 'memo': renderMemo(view); break;
   }
 }
 
