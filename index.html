@@ -1451,7 +1451,7 @@ function renderDaily(c){
     dailyLocked = {}; dailyResult = null;
   });
   $('dSave').addEventListener('click', saveDaily);
-  genDaily(false); // 首次进入自动生成一组
+  if(dailyResult) renderDailyResult(dailyResult);
   renderSavedDaily();
   viewRendered.daily = true;
 }
