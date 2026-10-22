@@ -22,7 +22,7 @@ var KEYS = {
 // 数据版本戳：每次发布新基础数据就 bump 此版本号（必须与 data.json 中的 data_version 一致）。
 // 版本变化时自动丢弃旧的本地基础库(lib/daily/stats)，加载新基础数据；
 // 个人数据(粉丝歌单 sgl_fan、添加歌曲 sgl_added、最近添加 sgl_fan_recent、保存歌单 sgl_saved)不受影响。
-var DATA_VERSION = '2026-10-23-v89';
+var DATA_VERSION = '2026-10-23-v90';
 var BUILD_VERSION = DATA_VERSION; // 内嵌不可变版本，用于检测网页代码是否过期（DATA_VERSION 可能被远程覆盖，故用此常量）
 
 // 远程数据地址（与页面同目录的 data.json）。部署后手机每次打开都会拉取最新数据，
@@ -217,11 +217,21 @@ var SYNC = (function(){
         a.concat(b).forEach(function(x){
           var jk=(x&&x[idKey]!=null)?x[idKey]:JSON.stringify(x);
           if(!seen[jk]){ seen[jk]=x; arr.push(x); return; }
-          // 字段级合并：local 优先，但 remote 的 sticky 布尔字段（pinned/done）若为 true 则覆盖
+          // 字段级合并：
+          // - done: sticky 单向（任一端 true 则 true，防止已完成的被冲掉）
+          // - pinned: 以 pos 时间戳大的一端为准（谁最新听谁的，取消置顶才能生效）
+          // - pos: 取较大值
+          // - 其他字段: local 优先
           if(k===KEYS.memo){
             var ex=seen[jk];
             Object.keys(x).forEach(function(key){
-              if((key==='pinned'||key==='done') && x[key]===true) ex[key]=true;
+              if(key==='done' && x[key]===true) ex[key]=true;
+              else if(key==='pinned'){
+                // 用 pos 判断哪端更新，新的覆盖旧的
+                var exPos = typeof ex.pos==='number' ? ex.pos : 0;
+                var xPos = typeof x.pos==='number' ? x.pos : 0;
+                if(xPos >= exPos) ex[key] = x[key];
+              }
               else if(key==='pos' && typeof x[key]==='number' && (typeof ex[key]!=='number'||x[key]>ex[key])) ex[key]=x[key];
               else if(ex[key]===undefined) ex[key]=x[key];
             });
@@ -735,10 +745,10 @@ function addMemo(text, tags){
   memoList.unshift({id:uid(), text:text, tags:tags.slice(), done:false, pinned:false, ts:now, pos:now});
   saveMemo(); renderMemoList(); return true;
 }
-function toggleMemo(id){ var m=memoList.find(function(x){return x.id===id;}); if(m){ m.done=!m.done; saveMemo(); renderMemoList(); } }
+function toggleMemo(id){ var m=memoList.find(function(x){return x.id===id;}); if(m){ m.done=!m.done; m.pos=Date.now(); saveMemo(); renderMemoList(); } }
 function delMemo(id){ memoList=memoList.filter(function(x){return x.id!==id;}); if(delMemoIds.indexOf(id)<0) delMemoIds.push(id); saveSyncDel(); saveMemo(); renderMemoList(); }
-function editMemo(id, t, tags){ var m=memoList.find(function(x){return x.id===id;}); if(m){ t=(t||'').trim(); if(t) m.text=t; if(tags && tags.length) m.tags=tags.slice(); saveMemo(); renderMemoList(); } }
-function pinMemo(id){ var m=memoList.find(function(x){return x.id===id;}); if(m){ m.pinned=!m.pinned; saveMemo(); renderMemoList(); } }
+function editMemo(id, t, tags){ var m=memoList.find(function(x){return x.id===id;}); if(m){ t=(t||'').trim(); if(t) m.text=t; if(tags && tags.length) m.tags=tags.slice(); m.pos=Date.now(); saveMemo(); renderMemoList(); } }
+function pinMemo(id){ var m=memoList.find(function(x){return x.id===id;}); if(m){ m.pinned=!m.pinned; m.pos=Date.now(); saveMemo(); renderMemoList(); } }
 
 function memoVisible(){
   var f=memoFilter, arr=memoList.slice();
